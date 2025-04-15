@@ -2,12 +2,28 @@ import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 import time
+import re
+from urllib.parse import urljoin
+
+base_url = "https://gol.gg/"
 
 def get_match_list(base_url):
-    response = requests.get(base_url)
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
+    response = requests.get(base_url, headers=headers)
+    
     soup = BeautifulSoup(response.content, 'html.parser')
 
-    match_table = soup.find('table', class_='list_match')
+    # Debug: veja se há conteúdo
+    with open("page_debug.html", "w", encoding="utf-8") as f:
+        f.write(soup.prettify())
+
+    match_table = soup.find('table', class_='table_list')
+    if match_table is None:
+        print("Tabela de partidas não encontrada!")
+        return []
+    
     rows = match_table.find_all('tr')[1:]  # Pula o cabeçalho
 
     matches = []
@@ -16,32 +32,27 @@ def get_match_list(base_url):
         if len(cols) < 5:
             continue
 
+        base_url = "https://gol.gg/"
+
+        # Extrai o atributo href da tag <a> da coluna desejada
+        raw_href = cols[0].find('a', href=True)['href']
+        segments = raw_href.strip("/").split("/")
+        desired_segments = segments[1:]
+
+        url = base_url + '/'.join(desired_segments) + '/'
+
         match = {
-            "date": cols[0].text.strip(),
-            "team1": cols[1].text.strip(),
-            "team2": cols[3].text.strip(),
-            "result": cols[2].text.strip(),  # Pode ser "vs", ou "W", etc.
-            "game_url": "https://gol.gg" + cols[2].find('a')['href'] if cols[2].find('a') else None
+            "team1":  cols[1].text.strip(),
+            "team2":  cols[3].text.strip(),
+            "wins1": cols[2].text.strip()[0],
+            "wins2": cols[2].text.strip()[-1],
+            "week":   cols[4].text.strip()[-1],
+            "date":   cols[6].text.strip(),
+            "url":    url
         }
         matches.append(match)
 
     return matches
-
-
-def parse_match_page(match_url):
-    response = requests.get(match_url)
-    soup = BeautifulSoup(response.content, 'html.parser')
-    
-    # Exemplo de extração simples (ajustar conforme estrutura real da página)
-    game_info = {
-        "url": match_url,
-        "team1": soup.find_all("div", class_="teamtext")[0].text.strip(),
-        "team2": soup.find_all("div", class_="teamtext")[1].text.strip(),
-        "winner": soup.find("div", class_="victory").text.strip(),
-    }
-
-    return game_info
-
 
 def scrape_lta_south(base_url):
     matches = get_match_list(base_url)
