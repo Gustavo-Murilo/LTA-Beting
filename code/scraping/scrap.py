@@ -1,9 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
-import time
-import re
-from urllib.parse import urljoin
 
 base_url = "https://gol.gg/"
 
@@ -14,10 +11,6 @@ def get_match_list(base_url):
     response = requests.get(base_url, headers=headers)
     
     soup = BeautifulSoup(response.content, 'html.parser')
-
-    # Debug: veja se há conteúdo
-    with open("page_debug.html", "w", encoding="utf-8") as f:
-        f.write(soup.prettify())
 
     match_table = soup.find('table', class_='table_list')
     if match_table is None:
