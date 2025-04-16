@@ -85,11 +85,6 @@ def scrape_match_details(match_url):
 
     Returns:
         dict: Match data including duration, and for each team: kills, towers, dragons, barons, gold, bans, and picks.
-
-    Notes:
-        - Missing values default to 'N/A' or empty list;
-        - Ban and pick order is preserved as shown on the site;
-        - Keys are prefixed with 'team1_' and 'team2_' to distinguish team stats.
     """
     headers = {"User-Agent": "Mozilla/5.0"}
     response = requests.get(match_url, headers=headers)
@@ -138,14 +133,51 @@ def scrape_match_details(match_url):
             elif "gold" in stat:
                 stats["gold"] = value
 
-        # Locate bans and picks divs adjacent to their labels
+        # Get bans and picks from their respective divs
         bans_div = next((div.find_next_sibling("div") for div in block.find_all("div", class_="col-2") if "Bans" in div.text), None)
         picks_div = next((div.find_next_sibling("div") for div in block.find_all("div", class_="col-2") if "Picks" in div.text), None)
 
         bans = [img['alt'] for img in bans_div.find_all('img')] if bans_div else []
         picks = [img['alt'] for img in picks_div.find_all('img')] if picks_div else []
 
-        # Add stats to the final dictionary using team1_ / team2_ prefix
+        # Get dragon types by team
+        dragon_types = []
+        # Find the div containing the dragon stats
+        stat_columns = block.find_all("div", class_="col-2")
+        if len(stat_columns) >= 3:
+            dragon_div = stat_columns[2]
+            dragon_imgs = dragon_div.find_all("img", class_="champion_icon_XS")
+            
+            for img in dragon_imgs:
+                alt_text = img.get('alt', '')
+                if 'Drake' in alt_text or 'Dragon' in alt_text:
+                    # Remove 'Drake', 'Dragon' and any extra spaces
+                    dragon_type = alt_text.replace('Drake', '').replace('Dragon', '').strip()
+                    if dragon_type:  # Add if isn't empty
+                        dragon_types.append(dragon_type)
+
+        # Determine first blood and first tower based on icon location
+        first_blood_icon = soup.find("img", alt="First Blood")
+        first_tower_icon = soup.find("img", alt="First Tower")
+
+        details["fb"] = "N/A"
+        details["ft"] = "N/A"
+
+        if first_blood_icon:
+            parent = first_blood_icon.find_parent("div", class_="col-12 col-sm-6")
+            if parent == team_blocks[0]:
+                details["fb"] = 1
+            elif parent == team_blocks[1]:
+                details["fb"] = 2
+
+        if first_tower_icon:
+            parent = first_tower_icon.find_parent("div", class_="col-12 col-sm-6")
+            if parent == team_blocks[0]:
+                details["ft"] = 1
+            elif parent == team_blocks[1]:
+                details["ft"] = 2
+
+        # Add team-specific stats to the result dictionary
         details[f"team{index}_kills"] = stats["kills"]
         details[f"team{index}_towers"] = stats["towers"]
         details[f"team{index}_dragons"] = stats["dragons"]
@@ -153,6 +185,7 @@ def scrape_match_details(match_url):
         details[f"team{index}_gold"] = stats["gold"]
         details[f"team{index}_bans"] = ", ".join(bans)
         details[f"team{index}_picks"] = ", ".join(picks)
+        details[f"team{index}_dragon_types"] = ", ".join(dragon_types) if dragon_types else "N/A"
 
     return details
 
@@ -165,11 +198,9 @@ def scrape_matches_details(input_csv, output_csv):
         input_csv (str): Path to the CSV containing the list of match URLs.
         output_csv (str): Path to the CSV where the match details will be saved.
     """
-    # Read the CSV with match list
     df = pd.read_csv(input_csv)
     detailed_matches = []
 
-    # Scrape details for each match and add to the detailed_matches list
     for index, row in df.iterrows():
         match_url = row["url"]
         if pd.isna(match_url) or match_url.strip() == "":
@@ -183,16 +214,14 @@ def scrape_matches_details(input_csv, output_csv):
         combined = row.to_dict()
         combined.update(details)
         detailed_matches.append(combined)
-        time.sleep(1)  # Sleep to avoid overloading the server
+        time.sleep(1)  # Delay to avoid overloading the server
 
-    # Save detailed matches data to a new CSV file
     df_details = pd.DataFrame(detailed_matches)
     df_details.to_csv(output_csv, index=False)
     print("Match details scraping completed. Data saved in", output_csv)
 
 
 if __name__ == "__main__":
-    # Input and output CSV paths
     input_csv = "data/raw/lta_south_matches.csv"
     output_csv = "data/raw/detailed_matches.csv"
     scrape_matches_details(input_csv, output_csv)
